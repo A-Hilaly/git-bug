@@ -26,7 +26,7 @@ type NameEdgeMaker func(value NodeType, offset int) Edge
 
 // NameConMaker define a function that create a ConnectionType
 type NameConMaker func(
-	edges []*EdgeType,
+	edges []EdgeType,
 	nodes []NodeType,
 	info *models.PageInfo,
 	totalCount int) (*ConnectionType, error)
@@ -34,7 +34,7 @@ type NameConMaker func(
 // NameCon will paginate a source according to the input of a relay connection
 func NameCon(source []NodeType, edgeMaker NameEdgeMaker, conMaker NameConMaker, input models.ConnectionInput) (*ConnectionType, error) {
 	var nodes []NodeType
-	var edges []*EdgeType
+	var edges []EdgeType
 	var cursors []string
 	var pageInfo = &models.PageInfo{}
 	var totalCount = len(source)
@@ -66,20 +66,18 @@ func NameCon(source []NodeType, edgeMaker NameEdgeMaker, conMaker NameConMaker, 
 				break
 			}
 
-			e := edge.(EdgeType)
-			edges = append(edges, &e)
+			edges = append(edges, edge.(EdgeType))
 			cursors = append(cursors, edge.GetCursor())
 			nodes = append(nodes, value)
 		}
 	} else {
-		edges = make([]*EdgeType, len(source))
+		edges = make([]EdgeType, len(source))
 		cursors = make([]string, len(source))
 		nodes = source
 
 		for i, value := range source {
 			edge := edgeMaker(value, i+offset)
-			e := edge.(EdgeType)
-			edges[i] = &e
+			edges[i] = edge.(EdgeType)
 			cursors[i] = edge.GetCursor()
 		}
 	}

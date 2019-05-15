@@ -56,8 +56,8 @@ func LazyIdentityCon(source []string, edgeMaker LazyIdentityEdgeMaker, conMaker 
 				break
 			}
 
-			e := edge.(LazyIdentityEdge)
-			edges = append(edges, &e)
+			e := edge.(*LazyIdentityEdge)
+			edges = append(edges, e)
 			cursors = append(cursors, edge.GetCursor())
 			nodes = append(nodes, value)
 		}
@@ -68,8 +68,8 @@ func LazyIdentityCon(source []string, edgeMaker LazyIdentityEdgeMaker, conMaker 
 
 		for i, value := range source {
 			edge := edgeMaker(value, i+offset)
-			e := edge.(LazyIdentityEdge)
-			edges[i] = &e
+			e := edge.(*LazyIdentityEdge)
+			edges[i] = e
 			cursors[i] = edge.GetCursor()
 		}
 	}

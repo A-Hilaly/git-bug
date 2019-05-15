@@ -57,8 +57,8 @@ func IdentityCon(source []identity.Interface, edgeMaker IdentityEdgeMaker, conMa
 				break
 			}
 
-			e := edge.(models.IdentityEdge)
-			edges = append(edges, &e)
+			e := edge.(*models.IdentityEdge)
+			edges = append(edges, e)
 			cursors = append(cursors, edge.GetCursor())
 			nodes = append(nodes, value)
 		}
@@ -69,8 +69,8 @@ func IdentityCon(source []identity.Interface, edgeMaker IdentityEdgeMaker, conMa
 
 		for i, value := range source {
 			edge := edgeMaker(value, i+offset)
-			e := edge.(models.IdentityEdge)
-			edges[i] = &e
+			e := edge.(*models.IdentityEdge)
+			edges[i] = e
 			cursors[i] = edge.GetCursor()
 		}
 	}

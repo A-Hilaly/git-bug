@@ -57,8 +57,8 @@ func CommentCon(source []bug.Comment, edgeMaker CommentEdgeMaker, conMaker Comme
 				break
 			}
 
-			e := edge.(models.CommentEdge)
-			edges = append(edges, &e)
+			e := edge.(*models.CommentEdge)
+			edges = append(edges, e)
 			cursors = append(cursors, edge.GetCursor())
 			nodes = append(nodes, value)
 		}
@@ -69,8 +69,8 @@ func CommentCon(source []bug.Comment, edgeMaker CommentEdgeMaker, conMaker Comme
 
 		for i, value := range source {
 			edge := edgeMaker(value, i+offset)
-			e := edge.(models.CommentEdge)
-			edges[i] = &e
+			e := edge.(*models.CommentEdge)
+			edges[i] = e
 			cursors[i] = edge.GetCursor()
 		}
 	}

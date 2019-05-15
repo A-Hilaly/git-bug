@@ -56,8 +56,8 @@ func LazyBugCon(source []string, edgeMaker LazyBugEdgeMaker, conMaker LazyBugCon
 				break
 			}
 
-			e := edge.(LazyBugEdge)
-			edges = append(edges, &e)
+			e := edge.(*LazyBugEdge)
+			edges = append(edges, e)
 			cursors = append(cursors, edge.GetCursor())
 			nodes = append(nodes, value)
 		}
@@ -68,8 +68,8 @@ func LazyBugCon(source []string, edgeMaker LazyBugEdgeMaker, conMaker LazyBugCon
 
 		for i, value := range source {
 			edge := edgeMaker(value, i+offset)
-			e := edge.(LazyBugEdge)
-			edges[i] = &e
+			e := edge.(*LazyBugEdge)
+			edges[i] = e
 			cursors[i] = edge.GetCursor()
 		}
 	}

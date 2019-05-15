@@ -57,8 +57,8 @@ func TimelineItemCon(source []bug.TimelineItem, edgeMaker TimelineItemEdgeMaker,
 				break
 			}
 
-			e := edge.(models.TimelineItemEdge)
-			edges = append(edges, &e)
+			e := edge.(*models.TimelineItemEdge)
+			edges = append(edges, e)
 			cursors = append(cursors, edge.GetCursor())
 			nodes = append(nodes, value)
 		}
@@ -69,8 +69,8 @@ func TimelineItemCon(source []bug.TimelineItem, edgeMaker TimelineItemEdgeMaker,
 
 		for i, value := range source {
 			edge := edgeMaker(value, i+offset)
-			e := edge.(models.TimelineItemEdge)
-			edges[i] = &e
+			e := edge.(*models.TimelineItemEdge)
+			edges[i] = e
 			cursors[i] = edge.GetCursor()
 		}
 	}
