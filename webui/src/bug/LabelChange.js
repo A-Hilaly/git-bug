@@ -48,8 +48,22 @@ LabelChange.fragment = gql`
         email
         displayName
       }
-      added
-      removed
+      added {
+        name
+        color {
+          R
+          G
+          B
+        }
+      }
+      removed {
+        name
+        color {
+          R
+          G
+          B
+        }
+      }
     }
   }
 `;

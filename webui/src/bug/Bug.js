@@ -72,7 +72,7 @@ const Bug = ({ bug, classes }) => (
         <ul className={classes.labelList}>
           {bug.labels.map(l => (
             <li className={classes.label}>
-              <Label label={l} key={l} />
+              <Label label={l} key={l.name} />
             </li>
           ))}
         </ul>
@@ -87,7 +87,14 @@ Bug.fragment = gql`
     humanId
     status
     title
-    labels
+    labels {
+      name
+      color {
+        R
+        G
+        B
+      }
+    }
     createdAt
     author {
       email
