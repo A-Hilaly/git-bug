@@ -44,9 +44,7 @@ LabelChange.fragment = gql`
     ... on LabelChangeTimelineItem {
       date
       author {
-        name
-        email
-        displayName
+        ...Author
       }
       added {
         ...Label
@@ -57,6 +55,7 @@ LabelChange.fragment = gql`
     }
   }
   ${Label.fragment}
+  ${Author.fragment}
 `;
 
 export default withStyles(styles)(LabelChange);

@@ -26,13 +26,12 @@ SetStatus.fragment = gql`
     ... on SetStatusTimelineItem {
       date
       author {
-        name
-        email
-        displayName
+        ...Author
       }
       status
     }
   }
+  ${Author.fragment}
 `;
 
 export default withStyles(styles)(SetStatus);

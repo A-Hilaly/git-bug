@@ -1,6 +1,7 @@
 import Tooltip from '@material-ui/core/Tooltip/Tooltip';
 import MAvatar from '@material-ui/core/Avatar';
 import React from 'react';
+import gql from 'graphql-tag';
 
 const Author = ({ author, ...props }) => {
   if (!author.email) {
@@ -13,6 +14,15 @@ const Author = ({ author, ...props }) => {
     </Tooltip>
   );
 };
+
+Author.fragment = gql`
+ fragment Author on Identity {
+    name
+    displayName
+    email
+    avatarUrl
+  }
+`;
 
 export const Avatar = ({ author, ...props }) => {
   if (author.avatarUrl) {

@@ -92,11 +92,10 @@ Bug.fragment = gql`
     }
     createdAt
     author {
-      email
-      name
-      displayName
+      ...Author
     }
   }
+  ${Author.fragment}
   ${Label.fragment}
 `;
 

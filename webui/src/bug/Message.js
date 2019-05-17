@@ -68,15 +68,13 @@ Message.createFragment = gql`
     ... on CreateTimelineItem {
       createdAt
       author {
-        name
-        email
-        displayName
-        avatarUrl
+        ...Author
       }
       edited
       message
     }
   }
+  ${Author.fragment}
 `;
 
 Message.commentFragment = gql`
@@ -84,15 +82,13 @@ Message.commentFragment = gql`
     ... on AddCommentTimelineItem {
       createdAt
       author {
-        name
-        email
-        displayName
-        avatarUrl
+        ...Author
       }
       edited
       message
     }
   }
+  ${Author.fragment}
 `;
 
 export default withStyles(styles)(Message);
