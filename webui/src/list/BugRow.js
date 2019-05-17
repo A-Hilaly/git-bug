@@ -92,18 +92,14 @@ BugRow.fragment = gql`
     status
     createdAt
     labels {
-      name
-      color {
-        R
-        G
-        B
-      }
+      ...Label
     }
     author {
       name
       displayName
     }
   }
+  ${Label.fragment}
 `;
 
 export default withStyles(styles)(BugRow);

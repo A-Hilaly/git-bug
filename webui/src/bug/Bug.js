@@ -88,12 +88,7 @@ Bug.fragment = gql`
     status
     title
     labels {
-      name
-      color {
-        R
-        G
-        B
-      }
+      ...Label
     }
     createdAt
     author {
@@ -102,6 +97,7 @@ Bug.fragment = gql`
       displayName
     }
   }
+  ${Label.fragment}
 `;
 
 export default withStyles(styles)(Bug);

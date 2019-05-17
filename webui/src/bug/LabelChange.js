@@ -49,23 +49,14 @@ LabelChange.fragment = gql`
         displayName
       }
       added {
-        name
-        color {
-          R
-          G
-          B
-        }
+        ...Label
       }
       removed {
-        name
-        color {
-          R
-          G
-          B
-        }
+        ...Label
       }
     }
   }
+  ${Label.fragment}
 `;
 
 export default withStyles(styles)(LabelChange);
