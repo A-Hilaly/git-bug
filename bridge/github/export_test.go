@@ -64,3 +64,9 @@ func genRepoName() {}
 func createRepository() {}
 
 func deleteRepository() {}
+
+// verifyIssue is full
+// comments
+func verifyIssue() {
+
+}
