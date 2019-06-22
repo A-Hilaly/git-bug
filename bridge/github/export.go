@@ -10,12 +10,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/shurcooL/githubv4"
 
 	"github.com/MichaelMure/git-bug/bridge/core"
 	"github.com/MichaelMure/git-bug/bug"
 	"github.com/MichaelMure/git-bug/cache"
 	"github.com/MichaelMure/git-bug/util/git"
+)
+
+var (
+	ErrMissingIdentityToken = errors.New("missing identity token")
 )
 
 // githubImporter implement the Importer interface
@@ -79,7 +84,7 @@ func (ge *githubExporter) getIdentityClient(id string) (*githubv4.Client, error)
 	// get token
 	token, ok := ge.identityToken[id]
 	if !ok {
-		return nil, fmt.Errorf("unknown identity token")
+		return nil, ErrMissingIdentityToken
 	}
 
 	// create client
@@ -182,28 +187,27 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 		// check that we have a token for operation author
 		client, err := ge.getIdentityClient(author.Id())
 		if err != nil {
-			// if bug is still not exported and user cannot author bug stop the execution
+			// if bug is still not exported and we do not have the author stop the execution
 
-			// TODO: maybe print a warning ?
-			// this is not an error
-			// don't export bug
+			fmt.Println("warning: skipping issue due to missing token for bug creator")
+			// this is not an error, don't export bug
 			return nil
 		}
 
 		// create bug
 		id, url, err := createGithubIssue(client, ge.repositoryID, createOp.Title, createOp.Message)
 		if err != nil {
-			return fmt.Errorf("exporting github issue: %v", err)
+			return errors.Wrap(err, "exporting github issue")
 		}
 
 		hash, err := createOp.Hash()
 		if err != nil {
-			return fmt.Errorf("comment hash: %v", err)
+			return errors.Wrap(err, "comment hash")
 		}
 
 		// mark bug creation operation as exported
 		if err := markOperationAsExported(b, hash, id, url); err != nil {
-			return fmt.Errorf("marking operation as exported: %v", err)
+			return errors.Wrap(err, "marking operation as exported")
 		}
 
 		// cache bug github ID and URL
@@ -231,7 +235,7 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 		// get operation hash
 		hash, err := op.Hash()
 		if err != nil {
-			return fmt.Errorf("reading operation hash: %v", err)
+			return errors.Wrap(err, "operation hash")
 		}
 
 		// ignore imported (or exported) operations from github
@@ -256,12 +260,12 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 			// send operation to github
 			id, url, err = addCommentGithubIssue(client, bugGithubID, opr.Message)
 			if err != nil {
-				return fmt.Errorf("adding comment: %v", err)
+				return errors.Wrap(err, "adding comment")
 			}
 
 			hash, err = opr.Hash()
 			if err != nil {
-				return fmt.Errorf("comment hash: %v", err)
+				return errors.Wrap(err, "comment hash")
 			}
 
 		case *bug.EditCommentOperation:
@@ -274,7 +278,7 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 
 				// case bug creation operation: we need to edit the Github issue
 				if err := updateGithubIssueBody(client, bugGithubID, opr.Message); err != nil {
-					return fmt.Errorf("editing issue: %v", err)
+					return errors.Wrap(err, "editing issue")
 				}
 
 				id = bugGithubID
@@ -290,7 +294,7 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 
 				eid, eurl, err := editCommentGithubIssue(client, commentID, opr.Message)
 				if err != nil {
-					return fmt.Errorf("editing comment: %v", err)
+					return errors.Wrap(err, "editing comment")
 				}
 
 				// use comment id/url instead of issue id/url
@@ -300,18 +304,18 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 
 			hash, err = opr.Hash()
 			if err != nil {
-				return fmt.Errorf("comment hash: %v", err)
+				return errors.Wrap(err, "comment hash")
 			}
 
 		case *bug.SetStatusOperation:
 			opr := op.(*bug.SetStatusOperation)
 			if err := updateGithubIssueStatus(client, bugGithubID, opr.Status); err != nil {
-				return fmt.Errorf("updating status %v: %v", bugGithubID, err)
+				return errors.Wrap(err, "editing status")
 			}
 
 			hash, err = opr.Hash()
 			if err != nil {
-				return fmt.Errorf("comment hash: %v", err)
+				return errors.Wrap(err, "set status operation hash")
 			}
 
 			id = bugGithubID
@@ -320,12 +324,12 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 		case *bug.SetTitleOperation:
 			opr := op.(*bug.SetTitleOperation)
 			if err := updateGithubIssueTitle(client, bugGithubID, opr.Title); err != nil {
-				return fmt.Errorf("editing comment %v: %v", bugGithubID, err)
+				return errors.Wrap(err, "editing title")
 			}
 
 			hash, err = opr.Hash()
 			if err != nil {
-				return fmt.Errorf("comment hash: %v", err)
+				return errors.Wrap(err, "set title operation hash")
 			}
 
 			id = bugGithubID
@@ -334,12 +338,12 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 		case *bug.LabelChangeOperation:
 			opr := op.(*bug.LabelChangeOperation)
 			if err := ge.updateGithubIssueLabels(client, bugGithubID, opr.Added, opr.Removed); err != nil {
-				return fmt.Errorf("updating labels %v: %v", bugGithubID, err)
+				return errors.Wrap(err, "updating labels")
 			}
 
 			hash, err = opr.Hash()
 			if err != nil {
-				return fmt.Errorf("comment hash: %v", err)
+				return errors.Wrap(err, "label change operation hash")
 			}
 
 			id = bugGithubID
@@ -351,12 +355,12 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 
 		// mark operation as exported
 		if err := markOperationAsExported(b, hash, id, url); err != nil {
-			return fmt.Errorf("marking operation as exported: %v", err)
+			return errors.Wrap(err, "marking operation as exported")
 		}
 	}
 
 	if err := b.CommitAsNeeded(); err != nil {
-		return fmt.Errorf("bug commit: %v", err)
+		return errors.Wrap(err, "bug commit")
 	}
 
 	return nil
@@ -541,7 +545,7 @@ func (ge *githubExporter) getLabelsIDs(repositoryID string, labels []bug.Label) 
 			// try to query label id
 			id, err = ge.getOrCreateGithubLabelID(repositoryID, label)
 			if err != nil {
-				return nil, fmt.Errorf("get or create github label: %v", err)
+				return nil, errors.Wrap(err, "get or create github label")
 			}
 
 			// cache label id
@@ -655,7 +659,7 @@ func updateGithubIssueTitle(gc *githubv4.Client, id, title string) error {
 func (ge *githubExporter) updateGithubIssueLabels(gc *githubv4.Client, labelableID string, added, removed []bug.Label) error {
 	addedIDs, err := ge.getLabelsIDs(labelableID, added)
 	if err != nil {
-		return fmt.Errorf("getting added labels ids: %v", err)
+		return errors.Wrap(err, "getting added labels ids")
 	}
 
 	m := &addLabelsToLabelableMutation{}
@@ -671,7 +675,7 @@ func (ge *githubExporter) updateGithubIssueLabels(gc *githubv4.Client, labelable
 
 	removedIDs, err := ge.getLabelsIDs(labelableID, added)
 	if err != nil {
-		return fmt.Errorf("getting added labels ids: %v", err)
+		return errors.Wrap(err, "getting added labels ids")
 	}
 
 	m2 := &removeLabelsFromLabelableMutation{}
