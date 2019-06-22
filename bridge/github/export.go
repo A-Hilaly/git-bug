@@ -75,6 +75,8 @@ func (ge *githubExporter) allowOrigin(origin string) bool {
 	return false
 }
 
+// getIdentityClient return an identity github api v4 client
+// if no client were found it will initilize it from the known tokens map and cache it for next it use
 func (ge *githubExporter) getIdentityClient(id string) (*githubv4.Client, error) {
 	client, ok := ge.identityClient[id]
 	if ok {
@@ -208,6 +210,11 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 		// mark bug creation operation as exported
 		if err := markOperationAsExported(b, hash, id, url); err != nil {
 			return errors.Wrap(err, "marking operation as exported")
+		}
+
+		// commit operation to avoid creating multiple issues with multiple pushes
+		if err := b.CommitAsNeeded(); err != nil {
+			return errors.Wrap(err, "bug commit")
 		}
 
 		// cache bug github ID and URL
@@ -357,10 +364,10 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 		if err := markOperationAsExported(b, hash, id, url); err != nil {
 			return errors.Wrap(err, "marking operation as exported")
 		}
-	}
 
-	if err := b.CommitAsNeeded(); err != nil {
-		return errors.Wrap(err, "bug commit")
+		if err := b.CommitAsNeeded(); err != nil {
+			return errors.Wrap(err, "bug commit")
+		}
 	}
 
 	return nil
@@ -419,49 +426,17 @@ func markOperationAsExported(b *cache.BugCache, target git.Hash, githubID, githu
 }
 
 // get label from github
-func (ge *githubExporter) getGithubLabelID(label string) (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/labels/%s", githubV3Url, ge.conf[keyOwner], ge.conf[keyProject], label)
-
-	client := &http.Client{
-		Timeout: defaultTimeout,
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
+func (ge *githubExporter) getGithubLabelID(gc *githubv4.Client, label string) (string, error) {
+	q := labelQuery{}
+	variables := map[string]interface{}{"name": label}
+	if err := gc.Query(context.TODO(), &q, variables); err != nil {
 		return "", err
 	}
 
-	// need the token for private repositories
-	req.Header.Set("Authorization", fmt.Sprintf("token %s", ge.conf[keyToken]))
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-
-	if resp.StatusCode != http.StatusFound {
-		return "", fmt.Errorf("error getting label: status code: %v", resp.StatusCode)
-	}
-
-	aux := struct {
-		ID     string `json:"id"`
-		NodeID string `json:"node_id"`
-		Color  string `json:"color"`
-	}{}
-
-	data, _ := ioutil.ReadAll(resp.Body)
-	defer resp.Body.Close()
-
-	err = json.Unmarshal(data, &aux)
-	if err != nil {
-		return "", err
-	}
-
-	return aux.NodeID, nil
+	return q.Repository.Label.ID, nil
 }
 
-// create github label using api v3
-func (ge *githubExporter) createGithubLabel(label, labelColor string) (string, error) {
+func (ge *githubExporter) createGithubLabel(gc *githubv4.Client, label, labelColor string) (string, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/labels", githubV3Url, ge.conf[keyOwner], ge.conf[keyProject])
 
 	client := &http.Client{
@@ -502,6 +477,22 @@ func (ge *githubExporter) createGithubLabel(label, labelColor string) (string, e
 	return aux.NodeID, nil
 }
 
+// create github label using api v4
+func (ge *githubExporter) createGithubLabelV4(gc *githubv4.Client, label, labelColor string) (string, error) {
+	m := &createLabelMutation{}
+	input := createLabelInput{
+		RepositoryID: ge.repositoryID,
+		Name:         githubv4.String(label),
+		Color:        githubv4.String(labelColor),
+	}
+
+	if err := gc.Mutate(context.TODO(), m, input, nil); err != nil {
+		return "", err
+	}
+
+	return m.CreateLabel.Label.ID, nil
+}
+
 // randomHexColor return a random hex color code
 func randomHexColor() string {
 	bytes := make([]byte, 6)
@@ -512,9 +503,9 @@ func randomHexColor() string {
 	return hex.EncodeToString(bytes)
 }
 
-func (ge *githubExporter) getOrCreateGithubLabelID(repositoryID, label string) (string, error) {
+func (ge *githubExporter) getOrCreateGithubLabelID(gc *githubv4.Client, repositoryID, label string) (string, error) {
 	// try to get label id
-	labelID, err := ge.getGithubLabelID(label)
+	labelID, err := ge.getGithubLabelID(gc, label)
 	if err == nil {
 		return labelID, nil
 	}
@@ -524,7 +515,7 @@ func (ge *githubExporter) getOrCreateGithubLabelID(repositoryID, label string) (
 	color := randomHexColor()
 
 	// create label and return id
-	labelID, err = ge.createGithubLabel(label, color)
+	labelID, err = ge.createGithubLabel(gc, label, color)
 	if err != nil {
 		return "", err
 	}
@@ -532,7 +523,7 @@ func (ge *githubExporter) getOrCreateGithubLabelID(repositoryID, label string) (
 	return labelID, nil
 }
 
-func (ge *githubExporter) getLabelsIDs(repositoryID string, labels []bug.Label) ([]githubv4.ID, error) {
+func (ge *githubExporter) getLabelsIDs(gc *githubv4.Client, repositoryID string, labels []bug.Label) ([]githubv4.ID, error) {
 	ids := make([]githubv4.ID, 0, len(labels))
 	var err error
 
@@ -543,7 +534,7 @@ func (ge *githubExporter) getLabelsIDs(repositoryID string, labels []bug.Label) 
 		id, ok := ge.cachedLabels[label]
 		if !ok {
 			// try to query label id
-			id, err = ge.getOrCreateGithubLabelID(repositoryID, label)
+			id, err = ge.getOrCreateGithubLabelID(gc, repositoryID, label)
 			if err != nil {
 				return nil, errors.Wrap(err, "get or create github label")
 			}
@@ -657,7 +648,7 @@ func updateGithubIssueTitle(gc *githubv4.Client, id, title string) error {
 
 // update github issue labels
 func (ge *githubExporter) updateGithubIssueLabels(gc *githubv4.Client, labelableID string, added, removed []bug.Label) error {
-	addedIDs, err := ge.getLabelsIDs(labelableID, added)
+	addedIDs, err := ge.getLabelsIDs(gc, labelableID, added)
 	if err != nil {
 		return errors.Wrap(err, "getting added labels ids")
 	}
@@ -673,7 +664,7 @@ func (ge *githubExporter) updateGithubIssueLabels(gc *githubv4.Client, labelable
 		return err
 	}
 
-	removedIDs, err := ge.getLabelsIDs(labelableID, added)
+	removedIDs, err := ge.getLabelsIDs(gc, labelableID, added)
 	if err != nil {
 		return errors.Wrap(err, "getting added labels ids")
 	}
