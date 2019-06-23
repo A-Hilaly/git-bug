@@ -214,6 +214,10 @@ func TestPushPull(t *testing.T) {
 		fmt.Println("deleted repository:", projectName)
 	}(t)
 
+	interrupt.RegisterCleaner(func() error {
+		return deleteRepository(projectName, user, token)
+	})
+
 	// initialize exporter
 	exporter := &githubExporter{}
 	err = exporter.Init(core.Configuration{
@@ -271,7 +275,7 @@ func TestPushPull(t *testing.T) {
 			}
 
 			// get bug github ID
-			bugGithubID, ok := tt.bug.Snapshot().Operations[0].GetMetadata(keyGithubId)
+			bugGithubID, ok := tt.bug.Snapshot().GetCreateMetadata(keyGithubId)
 			require.True(t, ok)
 
 			// retrive bug from backendTwo
@@ -282,7 +286,7 @@ func TestPushPull(t *testing.T) {
 			require.Len(t, importedBug.Snapshot().Operations, tt.numOrOp)
 
 			// verify bugs are taged with origin=github
-			issueOrigin, ok := importedBug.Snapshot().Operations[0].GetMetadata(keyOrigin)
+			issueOrigin, ok := importedBug.Snapshot().GetCreateMetadata(keyOrigin)
 			require.True(t, ok)
 			require.Equal(t, issueOrigin, target)
 
