@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/MichaelMure/git-bug/bridge/core"
-	"github.com/MichaelMure/git-bug/bug"
 	"github.com/MichaelMure/git-bug/cache"
 	"github.com/MichaelMure/git-bug/repository"
 	"github.com/MichaelMure/git-bug/util/interrupt"
@@ -24,50 +23,46 @@ const (
 )
 
 // testCases creates bugs in repo cache
-func testCases(repo *cache.RepoCache) (map[string]*cache.BugCache, error) {
-	author, err := repo.NewIdentity("test identity", "hello@testidentity.org")
-	if err != nil {
-		return nil, err
-	}
-
+func testCases(repo *cache.RepoCache, identity *cache.IdentityCache) (map[string]*cache.BugCache, error) {
 	bugs := make(map[string]*cache.BugCache)
 
 	// simple bug
-	simpleBug, err := repo.NewBugRaw(author, time.Now().Unix(), "simple bug", "new bug", nil, nil)
+	simpleBug, err := repo.NewBugRaw(identity, time.Now().Unix(), "simple bug", "new bug", nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	bugs["simple bug"] = simpleBug
 
-	// bug with comments
-	bugWithComments, err := repo.NewBugRaw(author, time.Now().Unix(), "bug with comments", "new bug", nil, nil)
-	if err != nil {
-		return nil, err
-	}
+	/*
+		// bug with comments
+		bugWithComments, err := repo.NewBugRaw(author, time.Now().Unix(), "bug with comments", "new bug", nil, nil)
+		if err != nil {
+			return nil, err
+		}
 
-	_, err = bugWithComments.AddCommentRaw(author, time.Now().Unix(), "new comment", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	bugs["bug with comments"] = bugWithComments
+		_, err = bugWithComments.AddCommentRaw(author, time.Now().Unix(), "new comment", nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		bugs["bug with comments"] = bugWithComments
 
-	// bug with label changes
-	bugLabelChange, err := repo.NewBugRaw(author, time.Now().Unix(), "bug label change", "new bug", nil, nil)
-	if err != nil {
-		return nil, err
-	}
+		// bug with label changes
+		bugLabelChange, err := repo.NewBugRaw(author, time.Now().Unix(), "bug label change", "new bug", nil, nil)
+		if err != nil {
+			return nil, err
+		}
 
-	_, _, err = bugLabelChange.ChangeLabelsRaw(author, time.Now().Unix(), []string{"bug", "core"}, nil, nil)
-	if err != nil {
-		return nil, err
-	}
+		_, _, err = bugLabelChange.ChangeLabelsRaw(author, time.Now().Unix(), []string{"bug", "core"}, nil, nil)
+		if err != nil {
+			return nil, err
+		}
 
-	_, _, err = bugLabelChange.ChangeLabelsRaw(author, time.Now().Unix(), nil, []string{"bug"}, nil)
-	if err != nil {
-		return nil, err
-	}
-	bugs["bug change label"] = bugWithComments
-
+		_, _, err = bugLabelChange.ChangeLabelsRaw(author, time.Now().Unix(), nil, []string{"bug"}, nil)
+		if err != nil {
+			return nil, err
+		}
+		bugs["bug change label"] = bugWithComments
+	*/
 	return nil, err
 }
 
@@ -84,56 +79,39 @@ func TestExporter(t *testing.T) {
 	backend, err := cache.NewRepoCache(repo)
 	require.NoError(t, err)
 
-	defer backend.Close()
-	interrupt.RegisterCleaner(backend.Close)
-
-	bugs, err := testCases(backend)
+	author, err := backend.NewIdentity("test identity", "hello@testidentity.org")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	tests := []struct {
-		name       string
-		operations []bug.Operation
-	}{
-		{
-			name:       "simple bug",
-			operations: bugs["simple bug"].Snapshot().Operations,
-		},
-		{
-			name:       "bug with comments",
-			operations: bugs["bug with comments"].Snapshot().Operations,
-		},
-		{
-			name:       "bug label change",
-			operations: bugs["bug change label"].Snapshot().Operations,
-		},
-		/*
-			{
-				name: "bug status edition",
-			},
-			{
-				name: "bug title edition",
-			},
-			{
-				name: "bug comments edition",
-			},
-			{
-				name: "complex bug",
-			},
-		*/
+	err = backend.SetUserIdentity(author)
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	defer backend.Close()
+	interrupt.RegisterCleaner(backend.Close)
+
+	tests, err := testCases(backend, author)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// generate project name
 	projectName := generateRepoName()
+	fmt.Println("creating repo", projectName)
 	if err := createRepository(projectName, token); err != nil {
 		t.Fatal(err)
 	}
 
-	defer func() {
+	//
+	//
+	defer func(t *testing.T) {
+		fmt.Println("deleting repo", projectName)
 		if err := deleteRepository(projectName, user, token); err != nil {
 			t.Fatal(err)
 		}
-	}()
+	}(t)
 
 	exporter := &githubExporter{}
 	err = exporter.Init(core.Configuration{
@@ -149,9 +127,9 @@ func TestExporter(t *testing.T) {
 	require.NoError(t, err)
 
 	fmt.Printf("test repository exported in %f seconds\n", time.Since(start).Seconds())
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			fmt.Println(tt.Snapshot())
 		})
 	}
 }
@@ -226,5 +204,11 @@ func deleteRepository(project, owner, token string) error {
 		return err
 	}
 
-	return resp.Body.Close()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("error deleting repository")
+	}
+
+	return nil
 }
