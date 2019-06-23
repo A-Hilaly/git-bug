@@ -67,7 +67,7 @@ func (ge *githubExporter) Init(conf core.Configuration) error {
 // if the exporter was initialized with no specified origins, it will return
 // true for all origins
 func (ge *githubExporter) allowOrigin(origin string) bool {
-	if ge.onlyOrigins == nil {
+	if len(ge.onlyOrigins) == 0 {
 		return true
 	}
 
@@ -81,7 +81,7 @@ func (ge *githubExporter) allowOrigin(origin string) bool {
 }
 
 // getIdentityClient return an identity github api v4 client
-// if no client were found it will initilize it from the known tokens map and cache it for next it use
+// if no client were found it will initilize it from the known tokens map and cache it for next use
 func (ge *githubExporter) getIdentityClient(id string) (*githubv4.Client, error) {
 	client, ok := ge.identityClient[id]
 	if ok {
