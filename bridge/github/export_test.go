@@ -173,7 +173,7 @@ func TestExporter(t *testing.T) {
 	backend, err := cache.NewRepoCache(repo)
 	require.NoError(t, err)
 
-	author, err := backend.NewIdentity("test identity", "hello@testidentity.org")
+	author, err := backend.NewIdentity("test identity", "test@test.org")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestExporter(t *testing.T) {
 		if err := deleteRepository(projectName, user, token); err != nil {
 			t.Fatal(err)
 		}
-		fmt.Println("deleting repository:", projectName)
+		fmt.Println("deleted repository:", projectName)
 	}(t)
 
 	// initialize exporter
