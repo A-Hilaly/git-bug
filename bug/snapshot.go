@@ -54,6 +54,11 @@ func (snap *Snapshot) LastEditUnix() int64 {
 	return snap.Operations[len(snap.Operations)-1].GetUnixTime()
 }
 
+// GetCreateMetadata return the creation metadata
+func (snap *Snapshot) GetCreateMetadata(key string) (string, bool) {
+	return snap.Operations[0].GetMetadata(key)
+}
+
 // SearchTimelineItem will search in the timeline for an item matching the given hash
 func (snap *Snapshot) SearchTimelineItem(hash git.Hash) (TimelineItem, error) {
 	for i := range snap.Timeline {
@@ -85,6 +90,30 @@ func (snap *Snapshot) addParticipant(participant identity.Interface) {
 	}
 
 	snap.Participants = append(snap.Participants, participant)
+}
+
+// HasParticipant return true if the id is a participant
+func (snap *Snapshot) HasParticipant(id string) bool {
+	for _, p := range snap.Participants {
+		if p.Id() == id {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAnyParticipant return true if one of the ids is a participant
+func (snap *Snapshot) HasAnyParticipant(ids ...string) bool {
+	if len(ids) == 0 {
+		return false
+	}
+
+	for _, id := range ids {
+		if snap.HasParticipant(id) {
+			return true
+		}
+	}
+	return false
 }
 
 // Sign post method for gqlgen
