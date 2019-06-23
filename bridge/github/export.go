@@ -272,10 +272,8 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 				return errors.Wrap(err, "adding comment")
 			}
 
-			hash, err = opr.Hash()
-			if err != nil {
-				return errors.Wrap(err, "comment hash")
-			}
+			// cache comment id
+			ge.cachedIDs[hash.String()] = id
 
 		case *bug.EditCommentOperation:
 
@@ -311,20 +309,10 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 				url = eurl
 			}
 
-			hash, err = opr.Hash()
-			if err != nil {
-				return errors.Wrap(err, "comment hash")
-			}
-
 		case *bug.SetStatusOperation:
 			opr := op.(*bug.SetStatusOperation)
 			if err := updateGithubIssueStatus(client, bugGithubID, opr.Status); err != nil {
 				return errors.Wrap(err, "editing status")
-			}
-
-			hash, err = opr.Hash()
-			if err != nil {
-				return errors.Wrap(err, "set status operation hash")
 			}
 
 			id = bugGithubID
@@ -336,11 +324,6 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 				return errors.Wrap(err, "editing title")
 			}
 
-			hash, err = opr.Hash()
-			if err != nil {
-				return errors.Wrap(err, "set title operation hash")
-			}
-
 			id = bugGithubID
 			url = bugGithubURL
 
@@ -348,11 +331,6 @@ func (ge *githubExporter) exportBug(b *cache.BugCache, since time.Time) error {
 			opr := op.(*bug.LabelChangeOperation)
 			if err := ge.updateGithubIssueLabels(client, bugGithubID, opr.Added, opr.Removed); err != nil {
 				return errors.Wrap(err, "updating labels")
-			}
-
-			hash, err = opr.Hash()
-			if err != nil {
-				return errors.Wrap(err, "label change operation hash")
 			}
 
 			id = bugGithubID
