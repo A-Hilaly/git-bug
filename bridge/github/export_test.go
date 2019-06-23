@@ -161,7 +161,7 @@ func testCases(repo *cache.RepoCache, identity *cache.IdentityCache) ([]*testCas
 
 }
 
-func TestExporter(t *testing.T) {
+func TestPushPull(t *testing.T) {
 	// repo owner
 	user := os.Getenv("TEST_USER")
 
@@ -200,13 +200,13 @@ func TestExporter(t *testing.T) {
 	// generate project name
 	projectName := generateRepoName()
 
-	// create repository
+	// create target Github repository
 	if err := createRepository(projectName, token); err != nil {
 		t.Fatal(err)
 	}
 	fmt.Println("created repository", projectName)
 
-	// delete repository before ending tests
+	// Make sure to remove the Github repository when the test end
 	defer func(t *testing.T) {
 		if err := deleteRepository(projectName, user, token); err != nil {
 			t.Fatal(err)
@@ -260,6 +260,7 @@ func TestExporter(t *testing.T) {
 
 			// verify operation have correcte metadata
 			for _, op := range tt.bug.Snapshot().Operations {
+				// Check if the originals operations (*not* SetMetadata) are tagged properly
 				if _, ok := op.(*bug.SetMetadataOperation); !ok {
 					_, haveIDMetadata := op.GetMetadata(keyGithubId)
 					require.True(t, haveIDMetadata)
@@ -302,6 +303,7 @@ func generateRepoName() string {
 
 // create repository need a token with scope 'repo'
 func createRepository(project, token string) error {
+// This function use the V3 Github API because repository creation is not supported yet on the V4 API.
 	url := fmt.Sprintf("%s/user/repos", githubV3Url)
 
 	params := struct {
@@ -343,6 +345,7 @@ func createRepository(project, token string) error {
 
 // delete repository need a token with scope 'delete_repo'
 func deleteRepository(project, owner, token string) error {
+// This function use the V3 Github API because repository removal is not supported yet on the V4 API.
 	url := fmt.Sprintf("%s/repos/%s/%s", githubV3Url, owner, project)
 
 	req, err := http.NewRequest("DELETE", url, nil)
