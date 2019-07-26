@@ -43,40 +43,52 @@ func (gi *githubImporter) Init(conf core.Configuration) error {
 
 // ImportAll iterate over all the configured repository issues and ensure the creation of the
 // missing issues / timeline items / edits / label events ...
-func (gi *githubImporter) ImportAll(repo *cache.RepoCache, since time.Time) error {
-	gi.iterator = NewIterator(gi.conf[keyOwner], gi.conf[keyProject], gi.conf[keyToken], since)
+func (gi *githubImporter) ImportAll(ctx context.Context, repo *cache.RepoCache, since time.Time) (<-chan core.ImportResult, error) {
+	out := make(chan core.ImportResult)
 
-	// Loop over all matching issues
-	for gi.iterator.NextIssue() {
-		issue := gi.iterator.IssueValue()
-		fmt.Printf("importing issue: %v\n", issue.Title)
+	go func() {
+		defer close(out)
+		iterator := NewIterator(gi.conf[keyOwner], gi.conf[keyProject], gi.conf[keyToken], since)
 
-		// create issue
-		b, err := gi.ensureIssue(repo, issue)
-		if err != nil {
-			return fmt.Errorf("issue creation: %v", err)
-		}
+		// Loop over all matching issues
+		for iterator.NextIssue() {
+			issue := gi.iterator.IssueValue()
+			fmt.Printf("importing issue: %v\n", issue.Title)
 
-		// loop over timeline items
-		for gi.iterator.NextTimelineItem() {
-			if err := gi.ensureTimelineItem(repo, b, gi.iterator.TimelineItemValue()); err != nil {
-				return fmt.Errorf("timeline item creation: %v", err)
+			// create issue
+			b, err := gi.ensureIssue(repo, issue)
+			if err != nil {
+				err := fmt.Errorf("issue creation: %v", err)
+				out <- core.NewImportError(err, b.Id())
+				return
+			}
+
+			// loop over timeline items
+			for iterator.NextTimelineItem() {
+				item := gi.iterator.TimelineItemValue()
+				if err := gi.ensureTimelineItem(repo, b, item); err != nil {
+					err := fmt.Errorf("timeline item creation: %v", err)
+					out <- core.NewImportError(err, string(item.Typename))
+					return
+				}
+			}
+
+			// commit bug state
+			if err := b.CommitAsNeeded(); err != nil {
+				err = fmt.Errorf("bug commit: %v", err)
+				out <- core.NewImportError(err, b.Id())
+				return
 			}
 		}
 
-		// commit bug state
-		if err := b.CommitAsNeeded(); err != nil {
-			return fmt.Errorf("bug commit: %v", err)
+		if err := gi.iterator.Error(); err != nil {
+			err = fmt.Errorf("bug commit: %v", err)
+			out <- core.NewImportError(err, "")
+			return
 		}
-	}
+	}()
 
-	if err := gi.iterator.Error(); err != nil {
-		fmt.Printf("import error: %v\n", err)
-		return err
-	}
-
-	fmt.Printf("Successfully imported %d issues and %d identities from Github\n", gi.importedIssues, gi.importedIdentities)
-	return nil
+	return out, nil
 }
 
 func (gi *githubImporter) ensureIssue(repo *cache.RepoCache, issue issueTimeline) (*cache.BugCache, error) {

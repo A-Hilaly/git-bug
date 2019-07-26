@@ -79,7 +79,7 @@ func (ge *githubExporter) getIdentityClient(id string) (*githubv4.Client, error)
 }
 
 // ExportAll export all event made by the current user to Github
-func (ge *githubExporter) ExportAll(repo *cache.RepoCache, since time.Time) (<-chan core.ExportResult, error) {
+func (ge *githubExporter) ExportAll(ctx context.Context, repo *cache.RepoCache, since time.Time) (<-chan core.ExportResult, error) {
 	out := make(chan core.ExportResult)
 
 	user, err := repo.GetUserIdentity()

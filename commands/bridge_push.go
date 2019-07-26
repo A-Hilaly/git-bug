@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -32,8 +33,16 @@ func runBridgePush(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	parentCtx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	interrupt.RegisterCleaner(func() error {
+		cancel()
+		return nil
+	})
+
 	// TODO: by default export only new events
-	out, err := b.ExportAll(time.Time{})
+	out, err := b.ExportAll(ctx, time.Time{})
 	if err != nil {
 		return err
 	}
