@@ -503,12 +503,12 @@ func (gi *githubImporter) ensureTimelineComment(repo *cache.RepoCache, b *cache.
 				}
 
 				// set hash
-				hash, err := op.Hash()
+				target, err = op.Hash()
 				if err != nil {
 					return err
 				}
 
-				gi.out <- core.NewImportComment(hash.String())
+				gi.out <- core.NewImportComment(target.String())
 				continue
 			}
 

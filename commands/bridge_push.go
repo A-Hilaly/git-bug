@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -32,19 +33,38 @@ func runBridgePush(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	parentCtx := context.Background()
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+
+	done := make(chan struct{})
+
+	interrupt.RegisterCleaner(func() error {
+		// send signal to stop the importer
+		cancel()
+
+		// block until importer gracefully shutdown
+		<-done
+		close(done)
+		return nil
+	})
+
 	// TODO: by default export only new events
-	out, err := b.ExportAll(time.Time{})
+	events, err := b.ExportAll(ctx, time.Time{})
 	if err != nil {
 		return err
 	}
 
-	for result := range out {
+	for result := range events {
 		if result.Err != nil {
 			fmt.Println(result.Err, result.Reason)
 		} else {
 			fmt.Printf("%s: %s\n", result.String(), result.ID)
 		}
 	}
+
+	// send done signal
+	done <- struct{}{}
 
 	return nil
 }

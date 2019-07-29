@@ -118,8 +118,9 @@ func (gi *gitlabImporter) ensureIssue(repo *cache.RepoCache, issue *gitlab.Issue
 	if err != nil && err != bug.ErrBugNotExist {
 		return nil, err
 	}
-
 	if err == nil {
+		reason := fmt.Sprintf("bug already imported")
+		gi.out <- core.NewImportNothing("", reason)
 		return b, nil
 	}
 
@@ -150,6 +151,7 @@ func (gi *gitlabImporter) ensureIssue(repo *cache.RepoCache, issue *gitlab.Issue
 
 	// importing a new bug
 	gi.importedIssues++
+	gi.out <- core.NewImportBug(b.Id())
 
 	return b, nil
 }
@@ -166,24 +168,42 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 	noteType, body := GetNoteType(note)
 	switch noteType {
 	case NOTE_CLOSED:
-		_, err = b.CloseRaw(
+		op, err := b.CloseRaw(
 			author,
 			note.CreatedAt.Unix(),
 			map[string]string{
 				keyGitlabId: id,
 			},
 		)
-		return err
+		if err != nil {
+			return err
+		}
+
+		hash, err := op.Hash()
+		if err != nil {
+			return err
+		}
+
+		gi.out <- core.NewImportStatusChange(hash.String())
 
 	case NOTE_REOPENED:
-		_, err = b.OpenRaw(
+		op, err := b.OpenRaw(
 			author,
 			note.CreatedAt.Unix(),
 			map[string]string{
 				keyGitlabId: id,
 			},
 		)
-		return err
+		if err != nil {
+			return err
+		}
+
+		hash, err := op.Hash()
+		if err != nil {
+			return err
+		}
+
+		gi.out <- core.NewImportStatusChange(hash.String())
 
 	case NOTE_DESCRIPTION_CHANGED:
 		issue := gi.iterator.IssueValue()
@@ -195,7 +215,7 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 		if issue.Description != firstComment.Message {
 
 			// comment edition
-			_, err = b.EditCommentRaw(
+			op, err := b.EditCommentRaw(
 				author,
 				note.UpdatedAt.Unix(),
 				git.Hash(firstComment.Id()),
@@ -205,12 +225,21 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 				},
 			)
 
-			return err
+			if err != nil {
+				return err
+			}
+
+			hash, err := op.Hash()
+			if err != nil {
+				return err
+			}
+
+			gi.out <- core.NewImportTitleEdition(hash.String())
 		}
 
 	case NOTE_COMMENT:
 		hash, errResolve := b.ResolveOperationWithMetadata(keyGitlabId, id)
-		if errResolve != cache.ErrNoMatchingOp {
+		if errResolve != nil {
 			return errResolve
 		}
 
@@ -223,7 +252,7 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 		if errResolve == cache.ErrNoMatchingOp {
 
 			// add comment operation
-			_, err = b.AddCommentRaw(
+			op, err := b.AddCommentRaw(
 				author,
 				note.CreatedAt.Unix(),
 				cleanText,
@@ -232,8 +261,17 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 					keyGitlabId: id,
 				},
 			)
+			if err != nil {
+				return err
+			}
 
-			return err
+			hash, err := op.Hash()
+			if err != nil {
+				return err
+			}
+
+			gi.out <- core.NewImportComment(hash.String())
+			return nil
 		}
 
 		// if comment was already exported
@@ -247,7 +285,7 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 		// compare local bug comment with the new note body
 		if comment.Message != cleanText {
 			// comment edition
-			_, err = b.EditCommentRaw(
+			op, err := b.EditCommentRaw(
 				author,
 				note.UpdatedAt.Unix(),
 				git.Hash(comment.Id()),
@@ -255,14 +293,23 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 				nil,
 			)
 
-			return err
+			if err != nil {
+				return err
+			}
+
+			hash, err := op.Hash()
+			if err != nil {
+				return err
+			}
+
+			gi.out <- core.NewImportCommentEdition(hash.String())
 		}
 
 		return nil
 
 	case NOTE_TITLE_CHANGED:
 		// title change events are given new notes
-		_, err = b.SetTitleRaw(
+		op, err := b.SetTitleRaw(
 			author,
 			note.CreatedAt.Unix(),
 			body,
@@ -270,8 +317,16 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 				keyGitlabId: id,
 			},
 		)
+		if err != nil {
+			return err
+		}
 
-		return err
+		hash, err := op.Hash()
+		if err != nil {
+			return err
+		}
+
+		gi.out <- core.NewImportTitleEdition(hash.String())
 
 	case NOTE_UNKNOWN,
 		NOTE_ASSIGNED,
@@ -282,6 +337,9 @@ func (gi *gitlabImporter) ensureNote(repo *cache.RepoCache, b *cache.BugCache, n
 		NOTE_REMOVED_DUEDATE,
 		NOTE_LOCKED,
 		NOTE_UNLOCKED:
+
+		reason := fmt.Sprintf("unsupported note type: %v", noteType)
+		gi.out <- core.NewImportNothing("", reason)
 		return nil
 
 	default:
@@ -350,10 +408,7 @@ func (gi *gitlabImporter) ensurePerson(repo *cache.RepoCache, id int) (*cache.Id
 		return nil, err
 	}
 
-	// importing a new identity
-	gi.importedIdentities++
-
-	return repo.NewIdentityRaw(
+	i, err = repo.NewIdentityRaw(
 		user.Name,
 		user.PublicEmail,
 		user.Username,
@@ -364,6 +419,12 @@ func (gi *gitlabImporter) ensurePerson(repo *cache.RepoCache, id int) (*cache.Id
 			keyGitlabLogin: user.Username,
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	gi.out <- core.NewImportIdentity(i.Id())
+	return i, nil
 }
 
 func parseID(id int) string {
