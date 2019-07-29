@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"time"
@@ -22,6 +23,9 @@ type gitlabImporter struct {
 	// iterator
 	iterator *iterator
 
+	// send only channel
+	out chan<- core.ImportResult
+
 	// number of imported issues
 	importedIssues int
 
@@ -36,49 +40,70 @@ func (gi *gitlabImporter) Init(conf core.Configuration) error {
 
 // ImportAll iterate over all the configured repository issues (notes) and ensure the creation
 // of the missing issues / comments / label events / title changes ...
-func (gi *gitlabImporter) ImportAll(repo *cache.RepoCache, since time.Time) error {
+func (gi *gitlabImporter) ImportAll(ctx context.Context, repo *cache.RepoCache, since time.Time) (<-chan core.ImportResult, error) {
 	gi.iterator = NewIterator(gi.conf[keyProjectID], gi.conf[keyToken], since)
+	out := make(chan core.ImportResult)
+	gi.out = out
 
-	// Loop over all matching issues
-	for gi.iterator.NextIssue() {
-		issue := gi.iterator.IssueValue()
-		fmt.Printf("importing issue: %v\n", issue.Title)
+	go func() {
+		defer close(gi.out)
 
-		// create issue
-		b, err := gi.ensureIssue(repo, issue)
-		if err != nil {
-			return fmt.Errorf("issue creation: %v", err)
-		}
+		// Loop over all matching issues
+		for gi.iterator.NextIssue() {
+			issue := gi.iterator.IssueValue()
 
-		// Loop over all notes
-		for gi.iterator.NextNote() {
-			note := gi.iterator.NoteValue()
-			if err := gi.ensureNote(repo, b, note); err != nil {
-				return fmt.Errorf("note creation: %v", err)
+			select {
+			case <-ctx.Done():
+				out <- core.NewImportError(ctx.Err(), "")
+				return
+
+			default:
+
+				// create issue
+				b, err := gi.ensureIssue(repo, issue)
+				if err != nil {
+					err := fmt.Errorf("issue creation: %v", err)
+					out <- core.NewImportError(err, b.Id())
+					return
+				}
+
+				// Loop over all notes
+				for gi.iterator.NextNote() {
+					note := gi.iterator.NoteValue()
+					if err := gi.ensureNote(repo, b, note); err != nil {
+						err := fmt.Errorf("note creation: %v", err)
+						out <- core.NewImportError(err, strconv.Itoa(note.ID))
+						return
+					}
+				}
+
+				// Loop over all label events
+				for gi.iterator.NextLabelEvent() {
+					labelEvent := gi.iterator.LabelEventValue()
+					if err := gi.ensureLabelEvent(repo, b, labelEvent); err != nil {
+						err := fmt.Errorf("label event creation: %v", err)
+						out <- core.NewImportError(err, strconv.Itoa(labelEvent.ID))
+						return
+					}
+				}
+
+				if err := gi.iterator.Error(); err != nil {
+					err := fmt.Errorf("import error: %v", err)
+					out <- core.NewImportError(err, "")
+					return
+				}
+
+				// commit bug state
+				if err := b.CommitAsNeeded(); err != nil {
+					err := fmt.Errorf("bug commit: %v", err)
+					out <- core.NewImportError(err, "")
+					return
+				}
 			}
 		}
+	}()
 
-		// Loop over all label events
-		for gi.iterator.NextLabelEvent() {
-			labelEvent := gi.iterator.LabelEventValue()
-			if err := gi.ensureLabelEvent(repo, b, labelEvent); err != nil {
-				return fmt.Errorf("label event creation: %v", err)
-			}
-		}
-
-		if err := gi.iterator.Error(); err != nil {
-			fmt.Printf("import error: %v\n", err)
-			return err
-		}
-
-		// commit bug state
-		if err := b.CommitAsNeeded(); err != nil {
-			return fmt.Errorf("bug commit: %v", err)
-		}
-	}
-
-	fmt.Printf("Successfully imported %d issues and %d identities from Gitlab\n", gi.importedIssues, gi.importedIdentities)
-	return nil
+	return out, nil
 }
 
 func (gi *gitlabImporter) ensureIssue(repo *cache.RepoCache, issue *gitlab.Issue) (*cache.BugCache, error) {
