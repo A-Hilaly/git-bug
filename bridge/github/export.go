@@ -79,7 +79,7 @@ func (ge *githubExporter) getIdentityClient(id string) (*githubv4.Client, error)
 }
 
 // ExportAll export all event made by the current user to Github
-func (ge *githubExporter) ExportAll(repo *cache.RepoCache, since time.Time) (<-chan core.ExportResult, error) {
+func (ge *githubExporter) ExportAll(ctx context.Context, repo *cache.RepoCache, since time.Time) (<-chan core.ExportResult, error) {
 	out := make(chan core.ExportResult)
 
 	user, err := repo.GetUserIdentity()
@@ -111,26 +111,33 @@ func (ge *githubExporter) ExportAll(repo *cache.RepoCache, since time.Time) (<-c
 		allBugsIds := repo.AllBugsIds()
 
 		for _, id := range allBugsIds {
-			b, err := repo.ResolveBug(id)
-			if err != nil {
-				out <- core.NewExportError(err, id)
+			select {
+			case <-ctx.Done():
+				out <- core.NewExportError(ctx.Err(), "")
 				return
-			}
 
-			snapshot := b.Snapshot()
+			default:
+				b, err := repo.ResolveBug(id)
+				if err != nil {
+					out <- core.NewExportError(err, id)
+					return
+				}
 
-			// ignore issues created before since date
-			// TODO: compare the Lamport time instead of using the unix time
-			if snapshot.CreatedAt.Before(since) {
-				out <- core.NewExportNothing(b.Id(), "bug created before the since date")
-				continue
-			}
+				snapshot := b.Snapshot()
 
-			if snapshot.HasAnyActor(allIdentitiesIds...) {
-				// try to export the bug and it associated events
-				ge.exportBug(b, since, out)
-			} else {
-				out <- core.NewExportNothing(id, "not an actor")
+				// ignore issues created before since date
+				// TODO: compare the Lamport time instead of using the unix time
+				if snapshot.CreatedAt.Before(since) {
+					out <- core.NewExportNothing(b.Id(), "bug created before the since date")
+					continue
+				}
+
+				if snapshot.HasAnyActor(allIdentitiesIds...) {
+					// try to export the bug and it associated events
+					ge.exportBug(b, since, out)
+				} else {
+					out <- core.NewExportNothing(id, "not an actor")
+				}
 			}
 		}
 	}()
