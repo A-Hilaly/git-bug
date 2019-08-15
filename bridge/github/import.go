@@ -53,50 +53,42 @@ func (gi *githubImporter) ImportAll(ctx context.Context, repo *cache.RepoCache, 
 		// Loop over all matching issues
 		for gi.iterator.NextIssue() {
 			issue := gi.iterator.IssueValue()
-			select {
-			case <-ctx.Done():
-				if b != nil {
-					if err := b.CommitAsNeeded(); err != nil {
-						err := errors.Wrap(err, "bug commit")
-						out <- core.NewImportError(err, b.Id())
-					}
-				}
 
-				out <- core.NewImportError(ctx.Err(), "")
+			// create issue
+			b, err = gi.ensureIssue(repo, issue)
+			if err != nil {
+				err := fmt.Errorf("issue creation: %v", err)
+				out <- core.NewImportError(err, "")
 				return
+			}
 
-			default:
-
-				// create issue
-				b, err = gi.ensureIssue(repo, issue)
-				if err != nil {
-					err := fmt.Errorf("issue creation: %v", err)
+			// loop over timeline items
+			for gi.iterator.NextTimelineItem() {
+				item := gi.iterator.TimelineItemValue()
+				if err := gi.ensureTimelineItem(repo, b, item); err != nil {
+					err := fmt.Errorf("timeline item creation: %v", err)
 					out <- core.NewImportError(err, "")
 					return
 				}
+			}
 
-				// loop over timeline items
-				for gi.iterator.NextTimelineItem() {
-					item := gi.iterator.TimelineItemValue()
-					if err := gi.ensureTimelineItem(repo, b, item); err != nil {
-						err := fmt.Errorf("timeline item creation: %v", err)
-						out <- core.NewImportError(err, "")
-						return
-					}
-				}
-
-				// commit bug state
-				if err := b.CommitAsNeeded(); err != nil {
-					err = fmt.Errorf("bug commit: %v", err)
-					out <- core.NewImportError(err, "")
-					return
-				}
+			// commit bug state
+			if err := b.CommitAsNeeded(); err != nil {
+				err = fmt.Errorf("bug commit: %v", err)
+				out <- core.NewImportError(err, "")
+				return
 			}
 		}
 
 		if err := gi.iterator.Error(); err != nil {
 			err = fmt.Errorf("iterator failure: %v", err)
 			out <- core.NewImportError(err, "")
+
+			err = b.CommitAsNeeded()
+			if err != nil {
+				err := errors.Wrap(err, "bug commit")
+				out <- core.NewImportError(err, b.Id())
+			}
 		}
 	}()
 
